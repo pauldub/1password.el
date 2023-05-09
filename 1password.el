@@ -7,6 +7,9 @@
 ;; Package-Requires: ((emacs "25.1"))
 ;; Created: 2019年5月15日 晚饭后
 
+;; Author: Henrique Goncalves <kamus@hadenes.io>
+;; Updated: 2023-05-09
+
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -72,7 +75,7 @@
               (let ((item (1password--json-read (buffer-string))))
                 (push (cons (downcase name) item) 1password--get-item-cache)
                 item))
-          (error "'op list items' failed: %s" (buffer-string)))))))
+          (error "'op item get' failed: %s" (buffer-string)))))))
 
 (defun 1password-get-fields (name)
   "Return the fields of the 1Password item with the given NAME."
