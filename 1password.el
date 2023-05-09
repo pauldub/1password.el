@@ -48,62 +48,57 @@
   :group '1password
   :type 'string)
 
-(defvar 1password-items nil)
-
 (defun 1password--json-read (string)
     (condition-case err
         (json-parse-string string)
       (error
        (error "JSON parsing error: %s" (error-message-string err)))))
 
-(defun 1password-items ()
-  "Cache of 'op item list'."
-  (or 1password-items
-      (let ((output (1password--get-command-output 1password-op-executable "item" "list" "--format" "json")))
-        (if output
-            (setq 1password-items (1password--json-read output))
-          (error "'op item list' failed")))))
-
-(defun 1password--read-name ()
-  (let ((completion-ignore-case t))
-    (completing-read "Name: "
-                     (mapcar (lambda (item) (let-alist item .overview.title))
-                             (1password-items))
-                     nil t)))
-
 (defvar 1password--get-item-cache nil
   "Cache for `1password-get-item'.
-
+  
 1Password is soooooo slow from here.")
 
+;;;###autoload
 (defun 1password-get-item (name)
   "Return json object for the NAME item."
-  (or (assoc-string name 1password--get-item-cache 'ignore-case)
+  (let ((cached-item (assoc (downcase name) 1password--get-item-cache)))
+    (if cached-item
+        (cdr cached-item)
       (with-temp-buffer
-        (if (zerop (call-process 1password-op-executable nil t nil "item" "get" name))
+        (if (zerop (call-process 1password-op-executable nil t nil "item" "get" name "--format" "json"))
             (progn
               (goto-char (point-min))
-              (let ((item (1password--json-read)))
+              (let ((item (1password--json-read (buffer-string))))
                 (push (cons (downcase name) item) 1password--get-item-cache)
                 item))
-          (error "'op list items' failed: %s" (buffer-string))))))
+          (error "'op list items' failed: %s" (buffer-string)))))))
+
+(defun 1password-get-fields (name)
+  "Return the fields of the 1Password item with the given NAME."
+  (let ((item (1password-get-item name)))
+    (when (string= "" name)
+      (user-error "Name can't be empty"))
+    (append (gethash "fields" item) nil)))
 
 ;;;###autoload
 (defun 1password-get-field (name field &optional copy)
-  "Return field of the NAME item."
-  (interactive (list (1password--read-name) t))
-  (when (string= "" name)
-    (user-error "Name can't be emtpy"))
-  (when (string= "" field)
-    (user-error "Field can't be emtpy"))
-  (catch 'getfield
-    (dolist (field (let-alist (1password-get-item name) .details.fields))
-      (let-alist field
-        (when (string= .name field)
-          (when copy
-            (kill-new .value)
-            (message "Field %s of %s copied: %s" field name .value))
-          (throw 'getfield .value))))))
+  "Return the value of the specified FIELD in the 1Password item with the given NAME."
+  (let ((fields (1password-get-fields name)))
+    (when (string= "" name)
+      (user-error "Name can't be empty"))
+    (when (string= "" field)
+      (user-error "Field can't be empty"))
+    (catch 'getfield
+      (dolist (field-item fields)
+        (let ((field-label (gethash "label" field-item))
+              (field-value (gethash "value" field-item)))
+          (when (string= field field-label)
+            (when copy
+              (kill-new field-value)
+              (message "Field %s of %s copied: %s" field name field-value))
+            (throw 'getfield field-value))))
+      (error "Field '%s' not found in item '%s'" field name))))
 
 ;;;###autoload
 (defun 1password-get-password (name &optional copy)
