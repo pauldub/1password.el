@@ -34,6 +34,11 @@
 
 (require 'json)
 
+(defun 1password--get-command-output (command &rest args)
+  "Execute COMMAND with ARGS and return its output as a string."
+  (with-output-to-string
+    (apply 'call-process command nil standard-output nil args)))
+
 (defgroup 1password nil
   "Use 1Password from Emacs."
   :group 'tools)
@@ -43,35 +48,21 @@
   :group '1password
   :type 'string)
 
-;;;###autoload
-(defun 1password-login (password)
-  (interactive (list (read-passwd "1Password Master Password: ")))
-  (unless (file-exists-p "~/.config/op/config")
-    (user-error "Please sign in from the command line for the first time, \
-see https://support.1password.com/command-line-getting-started/#get-started-with-the-command-line-tool")))
-
 (defvar 1password-items nil)
 
-(defun 1password--json-read ()
-  (let ((json-object-type 'alist)
-        (json-array-type  'list)
-        (json-key-type    'symbol)
-        (json-false       nil)
-        (json-null        nil))
+(defun 1password--json-read (string)
     (condition-case err
-        (json-read)
+        (json-parse-string string)
       (error
-       (error "JSON parsing error: %s" (error-message-string err))))))
+       (error "JSON parsing error: %s" (error-message-string err)))))
 
 (defun 1password-items ()
   "Cache of 'op item list'."
   (or 1password-items
-      (with-temp-buffer
-        (if (zerop (call-process 1password-op-executable nil t nil "item" "list" "--format" "json"))
-            (progn
-              (goto-char (point-min))
-              (setq 1password-items (1password--json-read)))
-          (error "'op item list' failed: %s" (buffer-string))))))
+      (let ((output (1password--get-command-output 1password-op-executable "item" "list" "--format" "json")))
+        (if output
+            (setq 1password-items (1password--json-read output))
+          (error "'op item list' failed")))))
 
 (defun 1password--read-name ()
   (let ((completion-ignore-case t))
@@ -114,6 +105,7 @@ see https://support.1password.com/command-line-getting-started/#get-started-with
             (message "Field %s of %s copied: %s" field name .value))
           (throw 'getfield .value))))))
 
+;;;###autoload
 (defun 1password-get-password (name &optional copy)
   "Return password of the NAME item."
   (1password-get-field name "password" copy))
