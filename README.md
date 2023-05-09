@@ -6,11 +6,11 @@ Forked from https://github.com/xuchunyang/1password.el to update to the latest 1
 
 ### `M-x 1password-get-password NAME`
 
-Get password of `NAME`, e.g., `github`.
+Get password of item `NAME`, e.g., `github`.
 
 ### `M-x 1password-get-field NAME FIELD`
 
-Get field `FIELD` of `NAME`, e.g., `github` `api_key`.
+Get field with label `FIELD` of item `NAME`, e.g., `github` `api_key`.
 
 ## Requires
 
