@@ -58,7 +58,10 @@ see https://support.1password.com/command-line-getting-started/#get-started-with
         (json-key-type    'symbol)
         (json-false       nil)
         (json-null        nil))
-    (json-read)))
+    (condition-case err
+        (json-read)
+      (error
+       (error "JSON parsing error: %s" (error-message-string err))))))
 
 (defun 1password-items ()
   "Cache of 'op item list'."
