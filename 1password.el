@@ -43,19 +43,12 @@
   :group '1password
   :type 'string)
 
-(defvar 1password-token nil
-  "Session token automatically expires after 30 minutes of inactivity.")
-
 ;;;###autoload
 (defun 1password-login (password)
   (interactive (list (read-passwd "1Password Master Password: ")))
-  (unless (file-exists-p "~/.op/config")
+  (unless (file-exists-p "~/.config/op/config")
     (user-error "Please sign in from the command line for the first time, \
-see https://support.1password.com/command-line-getting-started/#get-started-with-the-command-line-tool"))
-  (with-temp-buffer
-    (if (zerop (call-process-shell-command (format "echo -n %s | %s signin --output=raw" password 1password-op-executable) nil t))
-        (setq 1password-token (replace-regexp-in-string (rx "\n" eos) "" (buffer-string)))
-      (error "'op login' failed: %s" (buffer-string)))))
+see https://support.1password.com/command-line-getting-started/#get-started-with-the-command-line-tool")))
 
 (defvar 1password-items nil)
 
@@ -68,14 +61,14 @@ see https://support.1password.com/command-line-getting-started/#get-started-with
     (json-read)))
 
 (defun 1password-items ()
-  "Cache of 'op list items'."
+  "Cache of 'op item list'."
   (or 1password-items
       (with-temp-buffer
-        (if (zerop (call-process 1password-op-executable nil t nil "list" "items" (concat "--session=" 1password-token)))
+        (if (zerop (call-process 1password-op-executable nil t nil "item" "list" "--format" "json"))
             (progn
               (goto-char (point-min))
               (setq 1password-items (1password--json-read)))
-          (error "'op list items' failed: %s" (buffer-string))))))
+          (error "'op item list' failed: %s" (buffer-string))))))
 
 (defun 1password--read-name ()
   (let ((completion-ignore-case t))
@@ -93,7 +86,7 @@ see https://support.1password.com/command-line-getting-started/#get-started-with
   "Return json object for the NAME item."
   (or (assoc-string name 1password--get-item-cache 'ignore-case)
       (with-temp-buffer
-        (if (zerop (call-process 1password-op-executable nil t nil "get" "item" name (concat "--session=" 1password-token)))
+        (if (zerop (call-process 1password-op-executable nil t nil "item" "get" name))
             (progn
               (goto-char (point-min))
               (let ((item (1password--json-read)))
@@ -102,19 +95,25 @@ see https://support.1password.com/command-line-getting-started/#get-started-with
           (error "'op list items' failed: %s" (buffer-string))))))
 
 ;;;###autoload
-(defun 1password-get-password (name &optional copy)
-  "Return password of the NAME item."
+(defun 1password-get-field (name field &optional copy)
+  "Return field of the NAME item."
   (interactive (list (1password--read-name) t))
   (when (string= "" name)
     (user-error "Name can't be emtpy"))
-  (catch 'getpass
+  (when (string= "" field)
+    (user-error "Field can't be emtpy"))
+  (catch 'getfield
     (dolist (field (let-alist (1password-get-item name) .details.fields))
       (let-alist field
-        (when (string= .name "password")
+        (when (string= .name field)
           (when copy
             (kill-new .value)
-            (message "Password of %s copied: %s" name .value))
-          (throw 'getpass .value))))))
+            (message "Field %s of %s copied: %s" field name .value))
+          (throw 'getfield .value))))))
+
+(defun 1password-get-password (name &optional copy)
+  "Return password of the NAME item."
+  (1password-get-field name "password" copy))
 
 (provide '1password)
 ;;; 1password.el ends here
