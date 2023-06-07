@@ -58,6 +58,7 @@
   :type 'string)
 
 (defun 1password--json-read (string)
+  "Read JSON from STRING."
   (condition-case err
       (json-parse-string string)
     (error
@@ -124,7 +125,6 @@
   "Return password of the NAME item."
   (1password-get-field name "password" copy))
 
-
 ;;;###autoload
 (defun 1password-search (field value)
   "Search for item having VALUE in FIELD in 1Password."
@@ -158,7 +158,6 @@
          item-hash))
      matched-items)))
 
-
 (defun 1password-search-filter-username (accounts &optional username)
   "Filter results of `1password-search' ACCOUNTS by USERNAME.
 ACCOUNTS can be the results of `1password-search' or a string to
@@ -174,9 +173,7 @@ search which will call `1password-search' as a convenience."
                     accounts)
       accounts)))
 
-
 ;;================================= auth-source =================================
-
 
 (defun 1password-auth-source-search (&rest spec)
   "Search 1Password according to SPEC.
