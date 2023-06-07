@@ -1,6 +1,6 @@
 # Get password from 1Password
 
-Forked from https://github.com/xuchunyang/1password.el to update to the latest 1Password CLI version and to add support to get arbitrary fields.
+Forked from https://github.com/xuchunyang/1password.el to update to the latest 1Password CLI version, add support to get arbitrary fields and add auth-source backend.
 
 ## Usage
 
@@ -11,6 +11,10 @@ Get password of item `NAME`, e.g., `github`.
 ### `M-x 1password-get-field NAME FIELD`
 
 Get field with label `FIELD` of item `NAME`, e.g., `github` `api_key`.
+
+### `M-x 1password-auth-source-enable`
+
+To enable the auth-source backend.
 
 ## Requires
 

@@ -36,6 +36,12 @@
 (eval-when-compile (require 'let-alist))
 
 (require 'json)
+(require 'auth-source)
+
+(defvar 1password--get-item-cache nil
+  "Cache for `1password-get-item'.
+
+1Password is soooooo slow from here.")
 
 (defun 1password--get-command-output (command &rest args)
   "Execute COMMAND with ARGS and return its output as a string."
@@ -52,15 +58,25 @@
   :type 'string)
 
 (defun 1password--json-read (string)
-    (condition-case err
-        (json-parse-string string)
-      (error
-       (error "JSON parsing error: %s" (error-message-string err)))))
+  (condition-case err
+      (json-parse-string string)
+    (error
+     (error "JSON parsing error: %s" (error-message-string err)))))
 
-(defvar 1password--get-item-cache nil
-  "Cache for `1password-get-item'.
-  
-1Password is soooooo slow from here.")
+;;;###autoload
+(defun 1password-list-items ()
+  "List all items in 1Password."
+  (let ((cached-items (assoc (downcase "*all_items_list*") 1password--get-item-cache)))
+    (if cached-items
+        (cdr cached-items)
+      (with-temp-buffer
+        (if (zerop (call-process 1password-op-executable nil t nil "item" "list" "--format" "json"))
+            (progn
+              (goto-char (point-min))
+              (let ((items (1password--json-read (buffer-string))))
+                (push (cons (downcase "*all_items_list*") items) 1password--get-item-cache)
+                items))
+          (error "'op item list' failed: %s" (buffer-string)))))))
 
 ;;;###autoload
 (defun 1password-get-item (name)
@@ -87,11 +103,11 @@
 ;;;###autoload
 (defun 1password-get-field (name field &optional copy)
   "Return the value of the specified FIELD in the 1Password item with the given NAME."
+  (when (string= "" name)
+    (user-error "Name can't be empty"))
+  (when (string= "" field)
+    (user-error "Field can't be empty"))
   (let ((fields (1password-get-fields name)))
-    (when (string= "" name)
-      (user-error "Name can't be empty"))
-    (when (string= "" field)
-      (user-error "Field can't be empty"))
     (catch 'getfield
       (dolist (field-item fields)
         (let ((field-label (gethash "label" field-item))
@@ -107,6 +123,107 @@
 (defun 1password-get-password (name &optional copy)
   "Return password of the NAME item."
   (1password-get-field name "password" copy))
+
+
+;;;###autoload
+(defun 1password-search (field value)
+  "Search for item having VALUE in FIELD in 1Password."
+  (when (string= "" field)
+    (user-error "Field can't be empty"))
+  (when (string= "" value)
+    (user-error "Value can't be empty"))
+  (let
+      ((matched-items
+        (let ((items (1password-list-items))
+              (case-fold-search t))
+          (cl-remove-if-not (lambda (item) (string-match-p value (gethash field item))) items))))
+    (mapcar
+     (lambda (item)
+       (let ((item-fields (1password-get-fields (gethash "id" item)))
+             (item-hash (make-hash-table :test 'equal)))
+         (puthash "host" (gethash "title" item) item-hash)
+         (dolist (field-item item-fields)
+           (let ((field-label (gethash "label" field-item))
+                 (field-value (gethash "value" field-item)))
+             (when (string= field-label "api_key")
+               (puthash "api_key" field-value item-hash))
+             (when (string= field-label "password")
+               (puthash "secret" field-value item-hash))
+             (when (string= field-label "email")
+               (puthash "login" field-value item-hash)
+               (puthash "user" field-value item-hash))
+             (when (string= field-label "username")
+               (puthash "login" field-value item-hash)
+               (puthash "user" field-value item-hash))))
+         item-hash))
+     matched-items)))
+
+
+(defun 1password-search-filter-username (accounts &optional username)
+  "Filter results of `1password-search' ACCOUNTS by USERNAME.
+ACCOUNTS can be the results of `1password-search' or a string to
+search which will call `1password-search' as a convenience."
+  (let* ((accounts (if (vectorp accounts)
+                       accounts (1password-search "title" accounts)))
+         ;; filter out matches that are not logins
+         (accounts (seq-filter (lambda (elt) (gethash "login" elt)) accounts)))
+    (if (and (stringp username) (not (string= username "")))
+        (seq-filter (lambda (elt)
+                      (when-let ((login (gethash "login" elt)))
+                        (string= login username)))
+                    accounts)
+      accounts)))
+
+
+;;================================= auth-source =================================
+
+
+(defun 1password-auth-source-search (&rest spec)
+  "Search 1Password according to SPEC.
+See `auth-source-search' for a description of the plist SPEC."
+  (let* ((host (plist-get spec :host))
+         (max (plist-get spec :max))
+         (user (plist-get spec :user))
+         (res (mapcar #'1password-auth-source--build-result
+                      (1password-search-filter-username host user))))
+    (seq-take res max)))
+
+(defun 1password-auth-source--build-result (elt)
+  "Build a auth-source result for ELT.
+This is meant to be used by `mapcar' for the results from
+`1password-search-filter-username'."
+  (let ((l '()))
+    (maphash
+     (lambda (key value)
+       (setq l (cons (cons (intern (concat ":" key)) value) l )))
+     elt)
+    (flatten-tree l)))
+
+(defvar 1password-auth-source-backend
+  (auth-source-backend :type '1password
+                       :source "." ;; not used
+                       :search-function #'1password-auth-source-search)
+  "Auth-source backend variable for 1Password.")
+
+(defun 1password-auth-source-backend-parse (entry)
+  "Create auth-source backend from ENTRY."
+  (when (eq entry '1password)
+    (auth-source-backend-parse-parameters entry 1password-auth-source-backend)))
+
+;; advice to add custom auth-source function
+(if (boundp 'auth-source-backend-parser-functions)
+    (add-hook 'auth-source-backend-parser-functions
+              #'1password-auth-source-backend-parse)
+  (advice-add 'auth-source-backend-parse
+              :before-until #'1password-auth-source-backend-parse))
+
+;;;###autoload
+(defun 1password-auth-source-enable ()
+  "Enable 1password auth-source by adding it to `auth-sources'."
+  (interactive)
+  (add-to-list 'auth-sources '1password)
+  (auth-source-forget-all-cached)
+  (message "1Password: auth-source enabled"))
 
 (provide '1password)
 ;;; 1password.el ends here
