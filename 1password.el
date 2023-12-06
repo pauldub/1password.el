@@ -57,6 +57,11 @@
   :group '1password
   :type 'string)
 
+(defcustom 1password-account "account"
+  "The 1Password account to use."
+  :group '1password
+  :type 'string)
+
 (defun 1password--json-read (string)
   "Read JSON from STRING."
   (condition-case err
@@ -71,7 +76,7 @@
     (if cached-items
         (cdr cached-items)
       (with-temp-buffer
-        (if (zerop (call-process 1password-op-executable nil t nil "item" "list" "--format" "json"))
+        (if (zerop (call-process 1password-op-executable nil t nil "item" "list" "--format" "json" "--account" 1password-account))
             (progn
               (goto-char (point-min))
               (let ((items (1password--json-read (buffer-string))))
@@ -86,7 +91,7 @@
     (if cached-item
         (cdr cached-item)
       (with-temp-buffer
-        (if (zerop (call-process 1password-op-executable nil t nil "item" "get" name "--format" "json"))
+        (if (zerop (call-process 1password-op-executable nil t nil "item" "get" name "--format" "json" "--account" 1password-account))
             (progn
               (goto-char (point-min))
               (let ((item (1password--json-read (buffer-string))))
